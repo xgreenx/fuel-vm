@@ -19,19 +19,20 @@ use core::{cmp, fmt};
 pub(crate) struct Node<Key> {
     height: u32,
     prefix: Prefix,
-    bytes_lo: Bytes32,
-    bytes_hi: Bytes32,
-    key: PhantomData<Key>,
+    bytes_lo: Key,
+    bytes_hi: Key,
 }
 
-impl<Key> Default for Node<Key> {
+impl<Key> Default for Node<Key>
+where
+    Key: Default,
+{
     fn default() -> Self {
         Self {
             height: Default::default(),
             prefix: Default::default(),
-            bytes_lo: *zero_sum(),
-            bytes_hi: *zero_sum(),
-            key: Default::default(),
+            bytes_lo: Default::default(),
+            bytes_hi: Default::default(),
         }
     }
 }
@@ -44,12 +45,12 @@ where
         Node::<Key>::key_size_in_bits()
     }
 
-    pub fn new(height: u32, prefix: Prefix, bytes_lo: Bytes32, bytes_hi: Bytes32) -> Self {
+    pub fn new(height: u32, prefix: Prefix, bytes_lo: Key, bytes_hi: Key) -> Self {
         Self {
             height,
             prefix,
-            bytes_lo,
-            bytes_hi,
+            bytes_lo: bytes_lo,
+            bytes_hi: bytes_hi,
             ..Default::default()
         }
     }
@@ -58,7 +59,7 @@ where
         Self {
             height: 0u32,
             prefix: Prefix::Leaf,
-            bytes_lo: *key,
+            bytes_lo: (*key).into(),
             bytes_hi: sum(data),
             ..Default::default()
         }
@@ -68,8 +69,8 @@ where
         Self {
             height,
             prefix: Prefix::Node,
-            bytes_lo: left_child.hash(),
-            bytes_hi: right_child.hash(),
+            bytes_lo: left_child.hash().into(),
+            bytes_hi: right_child.hash().into(),
             ..Default::default()
         }
     }
@@ -128,11 +129,11 @@ where
         self.prefix
     }
 
-    pub fn bytes_lo(&self) -> &Bytes32 {
+    pub fn bytes_lo(&self) -> &Key {
         &self.bytes_lo
     }
 
-    pub fn bytes_hi(&self) -> &Bytes32 {
+    pub fn bytes_hi(&self) -> &Key {
         &self.bytes_hi
     }
 
@@ -165,12 +166,12 @@ where
     }
 
     pub fn is_placeholder(&self) -> bool {
-        *self.bytes_lo() == *zero_sum() && *self.bytes_hi() == *zero_sum()
+        *self.bytes_lo() == zero_sum() && *self.bytes_hi() == zero_sum()
     }
 
     pub fn hash(&self) -> Bytes32 {
         if self.is_placeholder() {
-            *zero_sum()
+            zero_sum()
         } else {
             let data = [self.prefix.as_ref(), self.bytes_lo.as_ref(), self.bytes_hi.as_ref()];
             sum_all(data)
@@ -307,7 +308,7 @@ pub enum StorageNodeError<StorageError> {
 impl<TableType, StorageType, Key> ParentNodeTrait for StorageNode<'_, TableType, StorageType, Key>
 where
     StorageType: StorageInspect<TableType>,
-    TableType: Mappable<Key = Key, Value = Primitive, OwnedValue = Primitive>,
+    TableType: Mappable<Key = Key, Value = Primitive<Key>, OwnedValue = Primitive<Key>>,
     Key: MerkleTreeKey + ComparablePath + PartialEq,
 {
     type Error = StorageNodeError<StorageType::Error>;
@@ -317,7 +318,7 @@ where
             return Err(ChildError::NodeIsLeaf);
         }
         let key = self.node.left_child_key();
-        if key.as_ref() == zero_sum() {
+        if key == zero_sum() {
             return Ok(Self::new(self.storage, Node::create_placeholder()));
         }
         let primitive = self
@@ -337,7 +338,7 @@ where
             return Err(ChildError::NodeIsLeaf);
         }
         let key = self.node.right_child_key();
-        if key.as_ref() == zero_sum() {
+        if key == zero_sum() {
             return Ok(Self::new(self.storage, Node::create_placeholder()));
         }
         let primitive = self
@@ -356,7 +357,7 @@ where
 impl<TableType, StorageType, Key> fmt::Debug for StorageNode<'_, TableType, StorageType, Key>
 where
     StorageType: StorageInspect<TableType>,
-    TableType: Mappable<Key = Key, Value = Primitive, OwnedValue = Primitive>,
+    TableType: Mappable<Key = Key, Value = Primitive<Key>, OwnedValue = Primitive<Key>>,
     Key: MerkleTreeKey + ComparablePath,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -434,12 +435,12 @@ mod test_node {
     fn test_create_placeholder_returns_a_placeholder_node() {
         let node = Node::<WrappedBytes32>::create_placeholder();
         assert_eq!(node.is_placeholder(), true);
-        assert_eq!(node.hash(), *zero_sum());
+        assert_eq!(node.hash(), zero_sum::<Bytes32>());
     }
 
     #[test]
     fn test_create_leaf_from_primitive_returns_a_valid_leaf() {
-        let primitive = (0, Prefix::Leaf as u8, [0xff; 32], [0xff; 32]);
+        let primitive = (0, Prefix::Leaf as u8, [0xff; 32].into(), [0xff; 32].into());
 
         let node: Node<WrappedBytes32> = primitive.try_into().unwrap();
         assert_eq!(node.is_leaf(), true);
@@ -452,7 +453,7 @@ mod test_node {
 
     #[test]
     fn test_create_node_from_primitive_returns_a_valid_node() {
-        let primitive = (255, Prefix::Node as u8, [0xff; 32], [0xff; 32]);
+        let primitive = (255, Prefix::Node as u8, [0xff; 32].into(), [0xff; 32].into());
 
         let node: Node<WrappedBytes32> = primitive.try_into().unwrap();
         assert_eq!(node.is_leaf(), false);
@@ -465,7 +466,7 @@ mod test_node {
 
     #[test]
     fn test_create_from_primitive_returns_deserialize_error_if_invalid_prefix() {
-        let primitive = (0xff, 0xff, [0xff; 32], [0xff; 32]);
+        let primitive = (0xff, 0xff, [0xff; 32].into(), [0xff; 32].into());
 
         // Should return Error; prefix 0xff is does not represent a node or leaf
         let err = Node::<WrappedBytes32>::try_from(primitive).expect_err("Expected try_from() to be Error; got OK");
@@ -548,7 +549,7 @@ mod test_storage_node {
         type Key = Self::OwnedKey;
         type OwnedKey = WrappedBytes32;
         type Value = Self::OwnedValue;
-        type OwnedValue = Primitive;
+        type OwnedValue = Primitive<Self::Key>;
     }
 
     #[test]
@@ -692,7 +693,10 @@ mod test_storage_node {
         let mut s = StorageMap::<TestTable>::new();
 
         let leaf_0 = Node::create_leaf(&sum(b"Hello World"), &[1u8; 32]);
-        let _ = s.insert(&leaf_0.hash().into(), &(0xff, 0xff, [0xff; 32], [0xff; 32]));
+        let _ = s.insert(
+            &leaf_0.hash().into(),
+            &(0xff, 0xff, [0xff; 32].into(), [0xff; 32].into()),
+        );
         let leaf_1 = Node::create_leaf(&sum(b"Goodbye World"), &[1u8; 32]);
         let node_0 = Node::create_node(&leaf_0, &leaf_1, 1);
 
@@ -715,7 +719,10 @@ mod test_storage_node {
 
         let leaf_0 = Node::create_leaf(&sum(b"Hello World"), &[1u8; 32]);
         let leaf_1 = Node::create_leaf(&sum(b"Goodbye World"), &[1u8; 32]);
-        let _ = s.insert(&leaf_1.hash().into(), &(0xff, 0xff, [0xff; 32], [0xff; 32]));
+        let _ = s.insert(
+            &leaf_1.hash().into(),
+            &(0xff, 0xff, [0xff; 32].into(), [0xff; 32].into()),
+        );
         let node_0 = Node::create_node(&leaf_0, &leaf_1, 1);
 
         let storage_node = StorageNode::new(&s, node_0);

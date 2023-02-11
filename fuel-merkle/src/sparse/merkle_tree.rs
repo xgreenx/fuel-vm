@@ -7,8 +7,8 @@ use crate::{
 use alloc::vec::Vec;
 use core::{cmp, iter, marker::PhantomData};
 
-pub trait MerkleTreeKey: From<Bytes32> + AsRef<[u8]> + Msb + Copy + PartialEq {}
-impl<T> MerkleTreeKey for T where T: From<Bytes32> + AsRef<[u8]> + Msb + Copy + PartialEq {}
+pub trait MerkleTreeKey: From<Bytes32> + AsRef<[u8]> + Msb + Copy + PartialEq + Default {}
+impl<T> MerkleTreeKey for T where T: From<Bytes32> + AsRef<[u8]> + Msb + Copy + PartialEq + Default {}
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
@@ -49,8 +49,8 @@ impl<TableType, StorageType, Key> MerkleTree<TableType, StorageType, Key>
 where
     Key: MerkleTreeKey,
 {
-    pub const fn empty_root() -> Bytes32 {
-        *zero_sum()
+    pub fn empty_root() -> Bytes32 {
+        zero_sum()
     }
 
     pub fn root(&self) -> Bytes32 {
@@ -71,7 +71,7 @@ where
 
 impl<TableType, StorageType, StorageError, Key> MerkleTree<TableType, StorageType, Key>
 where
-    TableType: Mappable<Key = Key, Value = Primitive, OwnedValue = Primitive>,
+    TableType: Mappable<Key = Key, Value = Primitive<Key>, OwnedValue = Primitive<Key>>,
     TableType::Key: MerkleTreeKey,
     StorageType: StorageInspect<TableType, Error = StorageError>,
 {
@@ -127,7 +127,7 @@ where
 
 impl<TableType, StorageType, StorageError, Key> MerkleTree<TableType, StorageType, Key>
 where
-    TableType: Mappable<Key = Key, Value = Primitive, OwnedValue = Primitive>,
+    TableType: Mappable<Key = Key, Value = Primitive<Key>, OwnedValue = Primitive<Key>>,
     TableType::Key: MerkleTreeKey,
     StorageType: StorageMutate<TableType, Error = StorageError>,
 {
@@ -318,7 +318,7 @@ mod test {
         type Key = Self::OwnedKey;
         type OwnedKey = WrappedBytes32;
         type Value = Self::OwnedValue;
-        type OwnedValue = Primitive;
+        type OwnedValue = Primitive<Self::Key>;
     }
 
     #[test]
@@ -722,7 +722,7 @@ mod test {
 
         // Overwrite the root key-value with an invalid primitive to create a
         // DeserializeError.
-        let primitive = (0xff, 0xff, [0xff; 32], [0xff; 32]);
+        let primitive = (0xff, 0xff, [0xff; 32].into(), [0xff; 32].into());
         storage.insert(&root.into(), &primitive).unwrap();
 
         let err = MerkleTree::load(&mut storage, &root.into()).expect_err("Expected load() to return Error; got Ok");

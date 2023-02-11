@@ -28,7 +28,7 @@ pub type Bytes8 = [u8; 8];
 pub type Bytes16 = [u8; 16];
 pub type Bytes32 = [u8; 32];
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub(crate) struct WrappedBytes32(Bytes32);
 
 impl AsRef<Bytes32> for WrappedBytes32 {

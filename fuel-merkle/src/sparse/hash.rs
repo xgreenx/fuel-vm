@@ -5,10 +5,12 @@ use sha2::Sha256;
 
 pub(crate) type Hash = Sha256;
 
-pub const fn zero_sum() -> &'static Bytes32 {
+pub fn zero_sum<V>() -> V
+where
+    V: From<Bytes32>,
+{
     const ZERO_SUM: Bytes32 = [0; 32];
-
-    &ZERO_SUM
+    ZERO_SUM.into()
 }
 
 pub fn sum<I, V>(data: I) -> V
